@@ -45,6 +45,45 @@
   color: var(--dsw-alias-state-success-primary);
 }
 
+.authorization {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.authorizationStatus,
+.authorizationNotice p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.authorizationNotice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.authorizationNotice a {
+  color: var(--dsw-alias-label-primary-bluish);
+}
+
+.authorizationNotice code {
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--ds-font-family-code);
+  font-size: 13px;
+}
+
 .rows {
   list-style: none;
   /* Extra air between the title/intro block and the first provider card. */

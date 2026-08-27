@@ -45,6 +45,7 @@ function api(overrides: {
   providers?: () => Promise<RpcResponse<{ providers: typeof DIRECTORY }>>
   describeSettings?: () => Promise<RpcResponse<{ writable: boolean; namespaces: typeof NAMESPACES }>>
   describeCredentials?: (refs: string[]) => Promise<RpcResponse<{ credentials: Record<string, unknown> }>>
+  listAuthorization?: () => Promise<RpcResponse<{ entries: unknown[] }>>
 } = {}) {
   const seenRefs: string[][] = []
   const face = {
@@ -66,6 +67,24 @@ function api(overrides: {
       },
       set: () => Promise.resolve(ok({})),
       unset: () => Promise.resolve(ok({})),
+    },
+    authorization: {
+      list: overrides.listAuthorization ?? (() => Promise.resolve(ok({
+        entries: [{
+          key: 'llm-pi-ai/openai',
+          label: 'OpenAI',
+          methods: [{ id: 'oauth', label: 'Sign in with ChatGPT' }],
+          inFlight: false,
+          configured: true,
+          writable: true,
+          credentialKind: 'grant',
+        }],
+      }))),
+      start: () => Promise.resolve(fail('unused')),
+      status: () => Promise.resolve(fail('unused')),
+      respond: () => Promise.resolve(fail('unused')),
+      cancel: () => Promise.resolve(fail('unused')),
+      signOut: () => Promise.resolve(fail('unused')),
     },
   }
   const wire = face as never
@@ -94,6 +113,9 @@ describe('ModelsSettingsStore', () => {
       removable: true,
       apiKeyEnv: 'OPENAI_API_KEY',
       credential: { configured: true },
+      authorization: {
+        key: 'llm-pi-ai/openai', configured: true, credentialKind: 'grant',
+      },
     })
     expect(byProvider.get('anthropic')).toMatchObject({ configured: false, removable: false })
     expect(byProvider.get('anthropic')?.apiKeyEnv).toBeUndefined()

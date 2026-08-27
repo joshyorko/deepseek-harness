@@ -23,7 +23,10 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { CredentialView, IApiClient, SettingsNamespaceView, SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
+import type {
+  AuthorizationEntryView, CredentialView, IApiClient, SettingsNamespaceView, SettingsPathOpView,
+} from '@deepseek-ai/dsh-api-remotes/client'
+import { AuthorizationControl } from './AuthorizationControl.tsx'
 import {
   DeepSeekModelsEditor, modelDrafts, validateDeepSeekModels,
 } from './DeepSeekModelsEditor.tsx'
@@ -64,7 +67,9 @@ export interface ProviderEditorProps {
   /** Path from the section root to this provider's profile. */
   settingsPath: readonly string[]
   /** Wire faces for writes and for interrogating a provider endpoint. */
-  api: Pick<IApiClient, 'settings' | 'credentials' | 'llm'>
+  api: Pick<IApiClient, 'settings' | 'credentials' | 'authorization' | 'llm'>
+  /** Provider-native sign-in flow for this route, when its adapter offers one. */
+  authorization?: AuthorizationEntryView
   /** Section copy. */
   t: (key: keyof typeof en) => string
   /** Disable writes (read-only settings provider). */
@@ -317,6 +322,18 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     }
   }
 
+  const commitAuthorizedProfile = async (): Promise<string | undefined> => {
+    setFailure(undefined)
+    try {
+      const failure = await applyOnce()
+      if (failure !== undefined) return failure
+      props.onClose(true)
+      return undefined
+    } catch (error) {
+      return messageOf(error)
+    }
+  }
+
   if (node === undefined) {
     // A directory entry addressing a position its schema cannot resolve is a
     // host-side inconsistency; showing it beats a blank card.
@@ -489,6 +506,18 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
               ? <span className={styles['editorRoute']}>{props.provider}</span>
               : null}
           </div>
+        )}
+      {props.authorization === undefined || layout !== 'pi-ai'
+        ? null
+        : (
+          <AuthorizationControl
+            entry={props.authorization}
+            api={api}
+            t={t}
+            disabled={props.readOnly}
+            onAuthorized={commitAuthorizedProfile}
+            onSignedOut={() => { props.onClose(true) }}
+          />
         )}
       {layout === 'unknown'
         ? <p className={styles['advancedHint']}>{`${t('advancedHint')} (${namespace.ns})`}</p>

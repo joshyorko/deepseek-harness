@@ -112,6 +112,9 @@ function scriptedFace(options: {
       set,
       unset: vi.fn(),
     },
+    authorization: {
+      list: vi.fn(() => Promise.resolve(ok({ entries: [] }))),
+    },
   }
   return { face, discover, mutate, set, namespace }
 }

@@ -282,7 +282,15 @@ describe('pushed invalidations', () => {
       rpcId: 'apply-models-providers' as never,
       result: { ok: true as const, value: { providers: [] } },
     }))
-    const b = await bench(true, { describe }, { llm: { providers } })
+    const b = await bench(true, { describe }, {
+      llm: { providers },
+      authorization: {
+        list: () => Promise.resolve({
+          rpcId: 'apply-models-authorization' as never,
+          result: { ok: true as const, value: { entries: [] } },
+        }),
+      },
+    })
     declare(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const entry = b.slots.entries('settings.section')

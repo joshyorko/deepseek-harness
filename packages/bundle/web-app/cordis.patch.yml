@@ -66,6 +66,11 @@
       config:
         maxNoteBytes: 8192
 
+    # Provider-native sign-in exists only where a human interaction surface
+    # can drive it; llm-pi-ai discovers this optional seam after it mounts.
+    - id: authorization
+      name: '@deepseek-ai/dsh-authorization'
+
     # Browser Session export: `/export` command plus the shared download dialog.
     - id: session-log-download
       name: '@deepseek-ai/dsh-session-log-export'

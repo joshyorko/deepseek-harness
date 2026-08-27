@@ -63,6 +63,11 @@ import {
 import {
   credentialsDescribeRequestSchema, credentialsSetRequestSchema, credentialsUnsetRequestSchema,
 } from '../api/credentials.schema.ts'
+import {
+  authorizationCancelRequestSchema, authorizationListRequestSchema,
+  authorizationRespondRequestSchema, authorizationSignOutRequestSchema,
+  authorizationStartRequestSchema, authorizationStatusRequestSchema,
+} from '../api/authorization.schema.ts'
 import { llmDiscoverModelsRequestSchema, llmModelsRequestSchema, llmProvidersRequestSchema } from '../api/llm.schema.ts'
 import {
   subagentHistoryRequestSchema,
@@ -137,6 +142,12 @@ const UNARY_ROUTES: UnaryRoutes = {
   'credentials.describe': { schema: credentialsDescribeRequestSchema, invoke: (api, r) => api.credentials.describe(r) },
   'credentials.set': { schema: credentialsSetRequestSchema, invoke: (api, r) => api.credentials.set(r) },
   'credentials.unset': { schema: credentialsUnsetRequestSchema, invoke: (api, r) => api.credentials.unset(r) },
+  'authorization.list': { schema: authorizationListRequestSchema, invoke: (api, r) => api.authorization.list(r) },
+  'authorization.start': { schema: authorizationStartRequestSchema, invoke: (api, r) => api.authorization.start(r) },
+  'authorization.status': { schema: authorizationStatusRequestSchema, invoke: (api, r) => api.authorization.status(r) },
+  'authorization.respond': { schema: authorizationRespondRequestSchema, invoke: (api, r) => api.authorization.respond(r) },
+  'authorization.cancel': { schema: authorizationCancelRequestSchema, invoke: (api, r) => api.authorization.cancel(r) },
+  'authorization.signOut': { schema: authorizationSignOutRequestSchema, invoke: (api, r) => api.authorization.signOut(r) },
   'llm.providers': { schema: llmProvidersRequestSchema, invoke: (api, r) => api.llm.providers(r) },
   'llm.models': { schema: llmModelsRequestSchema, invoke: (api, r) => api.llm.models(r) },
   'llm.discoverModels': { schema: llmDiscoverModelsRequestSchema, invoke: (api, r, signal) => api.llm.discoverModels(r, signal) },

@@ -3037,6 +3037,24 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         return ok(request, {})
       },
     },
+    authorization: {
+      list: request => ok(request, { entries: [] }),
+      start: request => err(request, {
+        code: 'internal', message: 'fixture authorization is unavailable', details: {},
+      }),
+      status: request => err(request, {
+        code: 'internal', message: 'fixture authorization is unavailable', details: {},
+      }),
+      respond: request => err(request, {
+        code: 'internal', message: 'fixture authorization is unavailable', details: {},
+      }),
+      cancel: request => err(request, {
+        code: 'internal', message: 'fixture authorization is unavailable', details: {},
+      }),
+      signOut: request => err(request, {
+        code: 'internal', message: 'fixture authorization is unavailable', details: {},
+      }),
+    },
     llm: {
       providers: request => ok(request, {
         providers: [
@@ -3224,6 +3242,12 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'credentials.describe': return this.api.credentials.describe(request)
       case 'credentials.set': return this.api.credentials.set(request)
       case 'credentials.unset': return this.api.credentials.unset(request)
+      case 'authorization.list': return this.api.authorization.list(request)
+      case 'authorization.start': return this.api.authorization.start(request)
+      case 'authorization.status': return this.api.authorization.status(request)
+      case 'authorization.respond': return this.api.authorization.respond(request)
+      case 'authorization.cancel': return this.api.authorization.cancel(request)
+      case 'authorization.signOut': return this.api.authorization.signOut(request)
       case 'llm.providers': return this.api.llm.providers(request)
       case 'llm.models': return this.api.llm.models(request)
       case 'llm.discoverModels': return this.api.llm.discoverModels(request, signal)
