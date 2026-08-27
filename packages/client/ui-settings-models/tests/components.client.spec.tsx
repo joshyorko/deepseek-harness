@@ -142,12 +142,33 @@ function scriptedFace(overrides: {
   mutate?: ReturnType<typeof vi.fn>
   set?: ReturnType<typeof vi.fn>
   unset?: ReturnType<typeof vi.fn>
+  listAuthorization?: ReturnType<typeof vi.fn>
+  startAuthorization?: ReturnType<typeof vi.fn>
+  statusAuthorization?: ReturnType<typeof vi.fn>
+  respondAuthorization?: ReturnType<typeof vi.fn>
+  cancelAuthorization?: ReturnType<typeof vi.fn>
+  signOutAuthorization?: ReturnType<typeof vi.fn>
 } = {}) {
   const update = overrides.update ?? vi.fn(() => Promise.resolve(ok(wireNamespaces()[2])))
   const replace = overrides.replace ?? vi.fn(() => Promise.resolve(ok(wireNamespaces()[2])))
   const mutate = overrides.mutate ?? vi.fn(() => Promise.resolve(ok(wireNamespaces()[2])))
   const set = overrides.set ?? vi.fn(() => Promise.resolve(ok({})))
   const unset = overrides.unset ?? vi.fn(() => Promise.resolve(ok({})))
+  const listAuthorization = overrides.listAuthorization ?? vi.fn(() => Promise.resolve(ok({
+    entries: [{
+      key: 'llm-pi-ai/openai-codex',
+      label: 'ChatGPT (Codex)',
+      methods: [{ id: 'oauth', label: 'Sign in with ChatGPT' }],
+      inFlight: false,
+      configured: false,
+      writable: true,
+    }],
+  })))
+  const startAuthorization = overrides.startAuthorization ?? vi.fn(() => Promise.resolve(fail('unused')))
+  const statusAuthorization = overrides.statusAuthorization ?? vi.fn(() => Promise.resolve(fail('unused')))
+  const respondAuthorization = overrides.respondAuthorization ?? vi.fn(() => Promise.resolve(fail('unused')))
+  const cancelAuthorization = overrides.cancelAuthorization ?? vi.fn(() => Promise.resolve(fail('unused')))
+  const signOutAuthorization = overrides.signOutAuthorization ?? vi.fn(() => Promise.resolve(fail('unused')))
   const face = {
     llm: {
       providers: vi.fn(() => Promise.resolve(ok({
@@ -179,14 +200,26 @@ function scriptedFace(overrides: {
       set,
       unset,
     },
+    authorization: {
+      list: listAuthorization,
+      start: startAuthorization,
+      status: statusAuthorization,
+      respond: respondAuthorization,
+      cancel: cancelAuthorization,
+      signOut: signOutAuthorization,
+    },
   }
-  return { face, update, replace, mutate, set, unset }
+  return {
+    face, update, replace, mutate, set, unset,
+    listAuthorization, startAuthorization, statusAuthorization,
+    respondAuthorization, cancelAuthorization, signOutAuthorization,
+  }
 }
 
 type WireFace = ConstructorParameters<typeof ModelsSettingsStore>[0]
 
 async function mountFace(scripted: ReturnType<typeof scriptedFace>) {
-  const { face, update, replace, mutate, set, unset } = scripted
+  const { face } = scripted
   const mirror = new SettingsDescribeMirror(face as never)
   const controller = new ModelsSettingsStore(face as unknown as WireFace, settingsSchema, mirror)
   await controller.load()
@@ -198,7 +231,7 @@ async function mountFace(scripted: ReturnType<typeof scriptedFace>) {
     t,
   }
   const view = render(<ModelsSection {...injected} />)
-  return { view, face, update, replace, mutate, set, unset, controller, mirror }
+  return { view, ...scripted, controller, mirror }
 }
 
 async function mountSection(overrides: Parameters<typeof scriptedFace>[0] = {}) {
@@ -234,6 +267,76 @@ describe('ModelsSection', () => {
     const uninjected = {} as ModelsSectionProps
     render(<ModelsSection {...uninjected} />)
     expect(document.body.textContent).toBe('')
+  })
+
+  it('signs in with a provider subscription and materializes its dormant route', async () => {
+    let answered = false
+    const attempt = {
+      attemptId: 'attempt-1',
+      key: 'llm-pi-ai/openai-codex',
+      state: 'prompt' as const,
+      notices: [{
+        message: 'Open this page to continue signing in.',
+        url: 'https://auth.openai.com/codex/device',
+        code: 'ABCD-1234',
+      }],
+      prompt: {
+        id: 'prompt-1',
+        kind: 'select' as const,
+        message: 'Choose an account',
+        options: [{ id: 'personal', label: 'Personal' }, { id: 'work', label: 'Work' }],
+      },
+    }
+    const scripted = scriptedFace({
+      startAuthorization: vi.fn(() => Promise.resolve(ok({ attempt }))),
+      statusAuthorization: vi.fn(() => Promise.resolve(ok({
+        attempt: answered
+          ? { ...attempt, state: 'authorized' as const, prompt: undefined }
+          : attempt,
+      }))),
+      respondAuthorization: vi.fn(() => {
+        answered = true
+        return Promise.resolve(ok({}))
+      }),
+    })
+    scripted.face.llm.providers.mockImplementation(() => Promise.resolve(ok({
+      providers: [
+        { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [], active: true },
+        { provider: 'openai', displayName: 'openai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'], active: true },
+        { provider: 'openai-codex', displayName: 'openai-codex', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai-codex'], active: false },
+      ],
+    })))
+    const mounted = await mountFace(scripted)
+
+    fireEvent.click(screen.getByText(en.add))
+    fireEvent.change(await screen.findByLabelText<HTMLSelectElement>(en.provider), {
+      target: { value: 'openai-codex' },
+    })
+    fireEvent.click(await screen.findByRole('button', { name: en.signIn }))
+
+    expect((await screen.findByRole('link', { name: en.openSignInPage })).getAttribute('href'))
+      .toBe('https://auth.openai.com/codex/device')
+    expect(screen.getByText('ABCD-1234')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText<HTMLSelectElement>('Choose an account'), {
+      target: { value: 'personal' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: en.continueSignIn }))
+
+    await waitFor(() => {
+      expect(mounted.respondAuthorization).toHaveBeenCalledWith({
+        key: 'llm-pi-ai/openai-codex',
+        attemptId: 'attempt-1',
+        promptId: 'prompt-1',
+        value: 'personal',
+      })
+    })
+    await waitFor(() => {
+      expect(mounted.mutate).toHaveBeenCalledWith({
+        ns: 'llm-pi-ai',
+        ops: [{ op: 'set', path: ['providers', 'openai-codex'], value: {} }],
+        expectedRevision: 0,
+      })
+    })
   })
 
   it('renders the unkeyed whole-section provider as an open setup card in the first-run posture', async () => {
@@ -315,6 +418,7 @@ describe('ModelsSection', () => {
       removable: false,
       apiKeyEnv: 'X',
       credential,
+      authorization: undefined,
     })
     expect(needsSetup(row(undefined), false)).toBe(true)
     expect(needsSetup(row({ configured: true, writable: true }), false)).toBe(false)

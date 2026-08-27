@@ -37,7 +37,7 @@ import {
 import type { PresetBearingSession } from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {
-  ApiProxy, ConfigurableProviderView, CredentialView, GoalRef, HistoryEntry, HostFrame,
+  ApiProxy, AuthorizationAttemptView, ConfigurableProviderView, CredentialView, GoalRef, HistoryEntry, HostFrame,
   ModelCatalogFailure, ModelProviderGroup,
   ModelReasoning, MuxFrame, PromptContentPart, QuestionResponsePayload, SessionListMetadata, SessionProjectionsBlock, SessionSearchItem,
   QueuedInboxItem, SessionSummary, SettingsNamespaceView, SubagentAddress, JobView, ToolEventView,
@@ -81,7 +81,10 @@ import type {} from '@deepseek-ai/dsh-skill'
 // provider still serves every other domain.
 import { SettingsConflictError, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { SettingsDescriptor, SettingsNamespace, SettingsPathOp } from '@deepseek-ai/dsh-settings'
-import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import { credentialRef, parseCredentialKey } from '@deepseek-ai/dsh-credentials'
+import type { CredentialKey } from '@deepseek-ai/dsh-credentials'
+import { AuthorizationDeclinedError } from '@deepseek-ai/dsh-authorization'
+import type { AuthorizationPrompt } from '@deepseek-ai/dsh-authorization'
 // Value edge: the rename impl narrows the title service's validation failure; the import also resolves `ctx.get('sessionTitle')`.
 import { SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
 import type { CallId } from '@deepseek-ai/dsh-llm/brand'
@@ -653,6 +656,38 @@ interface PendingQuestion {
   onAbort?: () => void
 }
 
+/** One browser-owned provider authorization attempt and its current prompt resolver. */
+interface BrowserAuthorizationAttempt {
+  view: AuthorizationAttemptView
+  prompt?: {
+    id: string
+    kind: AuthorizationPrompt['kind']
+    options?: readonly { id: string }[]
+    resolve(value: string): void
+    reject(error: Error): void
+    signal?: AbortSignal
+    onAbort?: () => void
+  }
+}
+
+/** Copy an attempt for the wire without exposing the mutable registry object. */
+function authorizationAttemptView(attempt: BrowserAuthorizationAttempt): AuthorizationAttemptView {
+  return {
+    ...attempt.view,
+    notices: attempt.view.notices.map(notice => ({ ...notice })),
+    ...attempt.view.prompt === undefined
+      ? {}
+      : {
+        prompt: {
+          ...attempt.view.prompt,
+          ...attempt.view.prompt.kind === 'select'
+            ? { options: attempt.view.prompt.options.map(option => ({ ...option })) }
+            : {},
+        },
+      },
+  }
+}
+
 /** Validate one answer batch against the exact question request it resolves. */
 function matchesQuestions(payload: QuestionResponsePayload, pending: PendingQuestion): boolean {
   if (payload.sessionId !== pending.sessionId) return false
@@ -1070,6 +1105,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   let workspaceCreationChain = Promise.resolve()
   const pendingQuestions = new Map<RpcId, PendingQuestion>()
   const pendingApprovals = new Map<RpcId, PendingApproval>()
+  const authorizationAttempts = new Map<CredentialKey, BrowserAuthorizationAttempt>()
   const muxQueues = new Set<FrameQueue<RpcRequest<MuxFrame>>>()
   const imageAdmissionChains = new WeakMap<Agent, Promise<void>>()
 
@@ -3214,6 +3250,239 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       update: request => settingsWrite(request, request.payload.ns, 'update', request.payload.patch, request.payload.expectedRevision),
       replace: request => settingsWrite(request, request.payload.ns, 'replace', request.payload.section, request.payload.expectedRevision),
       mutate: request => settingsWrite(request, request.payload.ns, 'mutate', request.payload.ops, request.payload.expectedRevision),
+    },
+
+    authorization: {
+      async list(request) {
+        const authorization = ctx.get('authorization')
+        if (authorization === undefined) return ok(request, { entries: [] })
+        const credentials = ctx.get('credentials')
+        const entries = await Promise.all(authorization.list().map(async (entry) => {
+          const info = credentials === undefined
+            ? { configured: false, writable: false }
+            : await credentials.describeRecord(entry.key)
+          return {
+            key: entry.key,
+            label: entry.label,
+            methods: entry.methods.map(method => ({ ...method })),
+            inFlight: entry.inFlight,
+            configured: info.configured,
+            writable: info.writable,
+            ...info.kind === undefined ? {} : { credentialKind: info.kind },
+          }
+        }))
+        return ok(request, { entries })
+      },
+
+      start(request) {
+        const authorization = ctx.get('authorization')
+        if (authorization === undefined) {
+          return Promise.resolve(err(request, {
+            code: 'internal', message: 'authorization service is not mounted', details: {},
+          }))
+        }
+        let key: CredentialKey
+        try {
+          key = parseCredentialKey(request.payload.key)
+        } catch (error: unknown) {
+          return Promise.resolve(err(request, {
+            code: 'internal', message: error instanceof Error ? error.message : String(error), details: {},
+          }))
+        }
+        const entry = authorization.describe(key)
+        if (entry === undefined) {
+          return Promise.resolve(err(request, {
+            code: 'internal', message: `no authorization flow is registered for "${key}"`, details: {},
+          }))
+        }
+        const method = request.payload.method ?? entry.methods[0]?.id
+        if (method === undefined || !entry.methods.some(candidate => candidate.id === method)) {
+          return Promise.resolve(err(request, {
+            code: 'internal', message: `authorization flow for "${key}" offers no method "${String(method)}"`, details: {},
+          }))
+        }
+        if (entry.inFlight) {
+          return Promise.resolve(err(request, {
+            code: 'internal', message: `an authorization attempt for "${key}" is already running`, details: {},
+          }))
+        }
+        const previous = authorizationAttempts.get(key)
+        if (previous?.view.state === 'running' || previous?.view.state === 'prompt') {
+          return Promise.resolve(err(request, {
+            code: 'internal', message: `an authorization attempt for "${key}" is already running`, details: {},
+          }))
+        }
+        const attempt: BrowserAuthorizationAttempt = {
+          view: {
+            attemptId: randomUUID(), key, state: 'running', notices: [],
+          },
+        }
+        authorizationAttempts.set(key, attempt)
+        void authorization.begin({
+          key,
+          method,
+          interaction: {
+            notify(notice) {
+              if (authorizationAttempts.get(key) !== attempt) return
+              attempt.view = {
+                ...attempt.view,
+                notices: [...attempt.view.notices, { ...notice }],
+              }
+            },
+            prompt(prompt) {
+              if (authorizationAttempts.get(key) !== attempt) {
+                return Promise.reject(new Error('authorization attempt was replaced'))
+              }
+              if (attempt.prompt !== undefined) {
+                return Promise.reject(new Error('authorization flow opened a second prompt before settling the first'))
+              }
+              if (prompt.signal?.aborted === true) {
+                return Promise.reject(new Error('authorization prompt was withdrawn before it opened'))
+              }
+              const id = randomUUID()
+              const promptView = prompt.kind === 'select'
+                ? {
+                  id, kind: 'select' as const, message: prompt.message,
+                  options: prompt.options.map(option => ({ ...option })),
+                }
+                : {
+                  id, kind: prompt.kind, message: prompt.message,
+                  ...prompt.placeholder === undefined ? {} : { placeholder: prompt.placeholder },
+                }
+              attempt.view = { ...attempt.view, state: 'prompt', prompt: promptView }
+              return new Promise<string>((resolve, reject) => {
+                const clear = (): void => {
+                  if (attempt.prompt?.id !== id) return
+                  if (attempt.prompt.signal !== undefined && attempt.prompt.onAbort !== undefined) {
+                    attempt.prompt.signal.removeEventListener('abort', attempt.prompt.onAbort)
+                  }
+                  delete attempt.prompt
+                  const { prompt: _prompt, ...view } = attempt.view
+                  attempt.view = { ...view, state: 'running' }
+                }
+                const onAbort = (): void => {
+                  clear()
+                  reject(new Error('authorization prompt was withdrawn'))
+                }
+                attempt.prompt = {
+                  id,
+                  kind: prompt.kind,
+                  ...prompt.kind === 'select' ? { options: prompt.options } : {},
+                  resolve: (value) => { clear(); resolve(value) },
+                  reject: (error) => { clear(); reject(error) },
+                  ...prompt.signal === undefined ? {} : { signal: prompt.signal, onAbort },
+                }
+                prompt.signal?.addEventListener('abort', onAbort, { once: true })
+              })
+            },
+          },
+        }).then((outcome) => {
+          if (authorizationAttempts.get(key) !== attempt) return
+          const { prompt: _prompt, ...view } = attempt.view
+          attempt.view = { ...view, state: outcome.status }
+          delete attempt.prompt
+        }, (error: unknown) => {
+          if (authorizationAttempts.get(key) !== attempt) return
+          const { prompt: _prompt, ...view } = attempt.view
+          attempt.view = {
+            ...view,
+            state: 'failed',
+            error: error instanceof Error ? error.message : String(error),
+          }
+          delete attempt.prompt
+        })
+        return Promise.resolve(ok(request, { attempt: authorizationAttemptView(attempt) }))
+      },
+
+      status(request) {
+        let key: CredentialKey
+        try {
+          key = parseCredentialKey(request.payload.key)
+        } catch (error: unknown) {
+          return Promise.resolve(err(request, {
+            code: 'internal', message: error instanceof Error ? error.message : String(error), details: {},
+          }))
+        }
+        const attempt = authorizationAttempts.get(key)
+        if (attempt === undefined || attempt.view.attemptId !== request.payload.attemptId) {
+          return Promise.resolve(err(request, {
+            code: 'internal', message: `authorization attempt is not available for "${key}"`, details: {},
+          }))
+        }
+        return Promise.resolve(ok(request, { attempt: authorizationAttemptView(attempt) }))
+      },
+
+      respond(request) {
+        let key: CredentialKey
+        try {
+          key = parseCredentialKey(request.payload.key)
+        } catch (error: unknown) {
+          return Promise.resolve(err(request, {
+            code: 'internal', message: error instanceof Error ? error.message : String(error), details: {},
+          }))
+        }
+        const attempt = authorizationAttempts.get(key)
+        const prompt = attempt?.prompt
+        if (
+          attempt === undefined || attempt.view.attemptId !== request.payload.attemptId
+          || prompt === undefined || prompt.id !== request.payload.promptId
+          || (prompt.kind === 'select' && !prompt.options?.some(option => option.id === request.payload.value))
+        ) {
+          return Promise.resolve(err(request, {
+            code: 'internal', message: 'authorization prompt response was rejected', details: {},
+          }))
+        }
+        prompt.resolve(request.payload.value)
+        return Promise.resolve(ok(request, {}))
+      },
+
+      cancel(request) {
+        let key: CredentialKey
+        try {
+          key = parseCredentialKey(request.payload.key)
+        } catch (error: unknown) {
+          return Promise.resolve(err(request, {
+            code: 'internal', message: error instanceof Error ? error.message : String(error), details: {},
+          }))
+        }
+        const attempt = authorizationAttempts.get(key)
+        if (attempt === undefined || attempt.view.attemptId !== request.payload.attemptId) {
+          return Promise.resolve(err(request, {
+            code: 'internal', message: `authorization attempt is not available for "${key}"`, details: {},
+          }))
+        }
+        attempt.prompt?.reject(new AuthorizationDeclinedError())
+        ctx.get('authorization')?.cancel(key)
+        const { prompt: _prompt, ...view } = attempt.view
+        attempt.view = { ...view, state: 'cancelled' }
+        delete attempt.prompt
+        return Promise.resolve(ok(request, {}))
+      },
+
+      async signOut(request) {
+        let key: CredentialKey
+        try {
+          key = parseCredentialKey(request.payload.key)
+        } catch (error: unknown) {
+          return err(request, {
+            code: 'internal', message: error instanceof Error ? error.message : String(error), details: {},
+          })
+        }
+        const credentials = ctx.get('credentials')
+        if (credentials === undefined) return err(request, credentialsAbsent())
+        const attempt = authorizationAttempts.get(key)
+        attempt?.prompt?.reject(new AuthorizationDeclinedError())
+        ctx.get('authorization')?.cancel(key)
+        authorizationAttempts.delete(key)
+        try {
+          await credentials.deleteRecord(key)
+        } catch (error: unknown) {
+          return err(request, {
+            code: 'internal', message: error instanceof Error ? error.message : String(error), details: {},
+          })
+        }
+        return ok(request, {})
+      },
     },
 
     credentials: {

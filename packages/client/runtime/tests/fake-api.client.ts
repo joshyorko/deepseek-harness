@@ -272,6 +272,15 @@ export class FakeApiClient implements IApiClient {
     unset: payload => this.record('credentials.unset', payload, Promise.resolve(ok({}))),
   }
 
+  readonly authorization: IApiClient['authorization'] = {
+    list: payload => this.record('authorization.list', payload, Promise.resolve(ok({ entries: [] }))),
+    start: payload => this.record('authorization.start', payload, Promise.reject(new Error('fixture authorization unavailable'))),
+    status: payload => this.record('authorization.status', payload, Promise.reject(new Error('fixture authorization unavailable'))),
+    respond: payload => this.record('authorization.respond', payload, Promise.reject(new Error('fixture authorization unavailable'))),
+    cancel: payload => this.record('authorization.cancel', payload, Promise.reject(new Error('fixture authorization unavailable'))),
+    signOut: payload => this.record('authorization.signOut', payload, Promise.reject(new Error('fixture authorization unavailable'))),
+  }
+
   readonly llm: IApiClient['llm'] = {
     providers: payload => this.record('llm.providers', payload, Promise.resolve(ok({ providers: [] }))),
     models: payload => this.record('llm.models', payload, Promise.resolve(ok({ groups: [], failures: [] }))),

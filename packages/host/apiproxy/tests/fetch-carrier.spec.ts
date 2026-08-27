@@ -271,6 +271,26 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
         return { rpcId: request.rpcId, result: { ok: true, value: {} } }
       },
     },
+    authorization: {
+      async list(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { entries: [] } } }
+      },
+      async start(request) {
+        return { rpcId: request.rpcId, result: { ok: false, error: { code: 'internal', message: 'stub', details: {} } } }
+      },
+      async status(request) {
+        return { rpcId: request.rpcId, result: { ok: false, error: { code: 'internal', message: 'stub', details: {} } } }
+      },
+      async respond(request) {
+        return { rpcId: request.rpcId, result: { ok: false, error: { code: 'internal', message: 'stub', details: {} } } }
+      },
+      async cancel(request) {
+        return { rpcId: request.rpcId, result: { ok: false, error: { code: 'internal', message: 'stub', details: {} } } }
+      },
+      async signOut(request) {
+        return { rpcId: request.rpcId, result: { ok: false, error: { code: 'internal', message: 'stub', details: {} } } }
+      },
+    },
     llm: {
       async providers(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { providers: [] } } }

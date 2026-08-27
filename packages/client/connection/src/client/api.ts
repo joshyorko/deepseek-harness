@@ -15,6 +15,7 @@ export type {
   ModelReasoningEffort, ModelSelection, QueueAction, QueuedInboxItem, SessionModels,
   GoalsApi, GoalRef,
   SettingsApi, SettingsNamespaceView, SettingsPathOpView, SettingsSecretView,
+  AuthorizationApi, AuthorizationAttemptView, AuthorizationEntryView,
   CredentialsApi, CredentialView, ConfigurableProviderView, DiscoveredModelView, LlmApi,
   SubagentsApi, SubagentAddress, SubagentCatalog, SubagentListEntry, SubagentPromptReceipt,
   JobView,

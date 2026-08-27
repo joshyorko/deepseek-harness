@@ -7,7 +7,7 @@
  */
 
 import type {
-  ConfigurableProviderView, CredentialView, IApiClient, SettingsNamespaceView,
+  AuthorizationEntryView, ConfigurableProviderView, CredentialView, IApiClient, SettingsNamespaceView,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
@@ -32,6 +32,8 @@ export interface ProviderRow {
   apiKeyEnv: string | undefined
   /** Credential state for {@link apiKeyEnv}, once described. */
   credential: CredentialView | undefined
+  /** Provider-native sign-in flow whose credential key matches this route. */
+  authorization: AuthorizationEntryView | undefined
 }
 
 /** Page snapshot. */
@@ -119,7 +121,7 @@ export class ModelsSettingsStore {
    * @param describeFace - the shared mirror's describe face (namespace views and writability).
    */
   constructor(
-    private readonly api: Pick<IApiClient, 'settings' | 'credentials' | 'llm'>,
+    private readonly api: Pick<IApiClient, 'settings' | 'credentials' | 'authorization' | 'llm'>,
     private readonly schema: SettingsSchemaOperations,
     private readonly describeFace: SettingsDescribeFace,
   ) {}
@@ -136,11 +138,13 @@ export class ModelsSettingsStore {
     const generation = ++this.generation
     this.store.update((s) => { s.status = 'loading'; s.error = null })
     let providers: ConfigurableProviderView[]
+    let authorizations: AuthorizationEntryView[] = []
     let writable: boolean
     let views: readonly SettingsNamespaceView[]
     try {
-      const [providersResponse] = await Promise.all([
+      const [providersResponse, authorizationResponse] = await Promise.all([
         this.api.llm.providers({}),
+        this.api.authorization.list({}).catch(() => undefined),
         this.describeFace.ensure(),
       ])
       if (!providersResponse.result.ok) throw new Error(providersResponse.result.error.message)
@@ -149,6 +153,9 @@ export class ModelsSettingsStore {
         throw new Error(mirrored.error ?? 'settings are unavailable in this browser')
       }
       providers = providersResponse.result.value.providers
+      if (authorizationResponse?.result.ok === true) {
+        authorizations = authorizationResponse.result.value.entries
+      }
       writable = mirrored.view.writable
       views = mirrored.view.namespaces
     } catch (error) {
@@ -160,6 +167,7 @@ export class ModelsSettingsStore {
       return
     }
     const namespaces = new Map(views.map(view => [view.ns, view]))
+    const authorizationByKey = new Map(authorizations.map(entry => [entry.key, entry]))
     const rows: ProviderRow[] = providers.map((entry) => {
       const namespace = namespaces.get(entry.settingsNs)
       const configured = namespace !== undefined
@@ -174,6 +182,7 @@ export class ModelsSettingsStore {
         removable,
         apiKeyEnv: apiKeyEnvOf(namespace, entry.settingsPath, this.schema),
         credential: undefined,
+        authorization: authorizationByKey.get(`${entry.settingsNs}/${entry.provider}`),
       }
     })
     const refs = [...new Set(rows.flatMap(row => row.apiKeyEnv === undefined ? [] : [row.apiKeyEnv]))]

@@ -125,6 +125,9 @@ function harness(options: {
         : Promise.resolve(fail(options.describeFailure)),
       set,
     },
+    authorization: {
+      list: () => Promise.resolve(ok({ entries: [] })),
+    },
   }
   const controller = new ModelsSettingsStore(face as never, settingsSchema, new SettingsDescribeMirror(face as never))
   const openSection = vi.fn()

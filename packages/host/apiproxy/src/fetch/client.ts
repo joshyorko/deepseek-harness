@@ -60,6 +60,11 @@ import {
 import {
   credentialsDescribeValueSchema, credentialsSetValueSchema, credentialsUnsetValueSchema,
 } from '../api/credentials.schema.ts'
+import {
+  authorizationCancelValueSchema, authorizationListValueSchema,
+  authorizationRespondValueSchema, authorizationSignOutValueSchema,
+  authorizationStartValueSchema, authorizationStatusValueSchema,
+} from '../api/authorization.schema.ts'
 import { llmDiscoverModelsValueSchema, llmModelsValueSchema, llmProvidersValueSchema } from '../api/llm.schema.ts'
 import {
   subagentHistoryValueSchema,
@@ -156,6 +161,14 @@ export interface IApiClient {
     set(payload: RequestPayload<'credentials.set'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'credentials.set'>>>
     unset(payload: RequestPayload<'credentials.unset'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'credentials.unset'>>>
   }
+  authorization: {
+    list(payload: RequestPayload<'authorization.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'authorization.list'>>>
+    start(payload: RequestPayload<'authorization.start'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'authorization.start'>>>
+    status(payload: RequestPayload<'authorization.status'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'authorization.status'>>>
+    respond(payload: RequestPayload<'authorization.respond'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'authorization.respond'>>>
+    cancel(payload: RequestPayload<'authorization.cancel'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'authorization.cancel'>>>
+    signOut(payload: RequestPayload<'authorization.signOut'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'authorization.signOut'>>>
+  }
   llm: {
     providers(payload: RequestPayload<'llm.providers'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'llm.providers'>>>
     models(payload: RequestPayload<'llm.models'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'llm.models'>>>
@@ -219,6 +232,12 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'credentials.describe': credentialsDescribeValueSchema,
   'credentials.set': credentialsSetValueSchema,
   'credentials.unset': credentialsUnsetValueSchema,
+  'authorization.list': authorizationListValueSchema,
+  'authorization.start': authorizationStartValueSchema,
+  'authorization.status': authorizationStatusValueSchema,
+  'authorization.respond': authorizationRespondValueSchema,
+  'authorization.cancel': authorizationCancelValueSchema,
+  'authorization.signOut': authorizationSignOutValueSchema,
   'llm.providers': llmProvidersValueSchema,
   'llm.models': llmModelsValueSchema,
   'llm.discoverModels': llmDiscoverModelsValueSchema,
@@ -492,6 +511,15 @@ export abstract class AbstractApiClient implements IApiClient {
     describe: (payload, signal) => this.callUnary('credentials.describe', payload, signal),
     set: (payload, signal) => this.callUnary('credentials.set', payload, signal),
     unset: (payload, signal) => this.callUnary('credentials.unset', payload, signal),
+  }
+
+  readonly authorization: IApiClient['authorization'] = {
+    list: (payload, signal) => this.callUnary('authorization.list', payload, signal),
+    start: (payload, signal) => this.callUnary('authorization.start', payload, signal),
+    status: (payload, signal) => this.callUnary('authorization.status', payload, signal),
+    respond: (payload, signal) => this.callUnary('authorization.respond', payload, signal),
+    cancel: (payload, signal) => this.callUnary('authorization.cancel', payload, signal),
+    signOut: (payload, signal) => this.callUnary('authorization.signOut', payload, signal),
   }
 
   readonly llm: IApiClient['llm'] = {

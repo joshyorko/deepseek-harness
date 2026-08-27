@@ -69,7 +69,8 @@ export const Config: z<ConnectionConfig> = z.object({
 /**
  * Methods gated to loopback even on a trusted-host deployment. Native dialogs
  * act on the host machine; the settings and credential domains mutate the
- * user's configuration and secret store, and READING them is equally
+ * user's configuration and secret store, provider authorization starts or
+ * deletes grants, and READING them is equally
  * privileged — `settings.describe` returns every exposed namespace's
  * configuration and `credentials.describe` reports whether an arbitrary
  * environment-variable name is configured and where from, which is
@@ -115,6 +116,12 @@ const PRIVILEGED_METHODS = new Set([
   'credentials.describe',
   'credentials.set',
   'credentials.unset',
+  'authorization.list',
+  'authorization.start',
+  'authorization.status',
+  'authorization.respond',
+  'authorization.cancel',
+  'authorization.signOut',
   'llm.discoverModels',
 ])
 
