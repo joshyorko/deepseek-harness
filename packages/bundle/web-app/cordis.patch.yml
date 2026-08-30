@@ -196,6 +196,12 @@
     - id: ui-settings-models
       name: '@deepseek-ai/dsh-client-ui-settings-models'
 
+    - id: authorization
+      name: '@deepseek-ai/dsh-authorization'
+
+    - id: llm-pi-ai-oauth
+      name: '@deepseek-ai/dsh-llm-pi-ai-oauth'
+
     - id: ui-settings-plugin-inventory
       name: '@deepseek-ai/dsh-client-ui-settings-plugin-inventory'
 
