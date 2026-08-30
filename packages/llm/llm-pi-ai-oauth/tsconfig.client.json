@@ -7,6 +7,8 @@
     { "path": "../../typert/protocol" },
     { "path": "../../credentials/authorization" },
     { "path": "../../api/remotes/tsconfig.client.json" },
+    { "path": "../../client/locale" },
+    { "path": "../../client/ui-renderer" },
     { "path": "../../client/ui-settings-models" },
     { "path": "../../client/ui-slots" }
   ]

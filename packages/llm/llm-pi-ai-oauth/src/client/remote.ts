@@ -1,10 +1,19 @@
-import type { AuthorizationAttemptView, AuthorizationFlowView, AuthorizationStartView } from '../types.ts'
-export interface ClientAuthorizationRemote {
-  list(): Promise<readonly AuthorizationFlowView[]>
-  start(key: string, method: string): Promise<AuthorizationStartView>
-  status(key: string, attemptId: string): Promise<AuthorizationAttemptView>
-  respond(key: string, attemptId: string, promptId: string, value: string): Promise<AuthorizationAttemptView>
-  cancel(key: string, attemptId: string): Promise<AuthorizationAttemptView>
-  signOut(key: string): Promise<void>
+import type { RemoteResult, TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
+import type {} from '@deepseek-ai/dsh-llm-pi-ai-oauth/remote'
+
+/** The generated authorization namespace mounted by the Web connection. */
+export type ClientAuthorizationRemote = TypertRemoteNamespaceMap['authorization']
+
+/** The generated settings methods used to materialize a provider profile. */
+export type ClientSettingsRemote = Pick<
+  import('@deepseek-ai/dsh-api-remotes/client').ClientRemote['settings'], 'describe' | 'mutate'
+>
+
+/** A generated Remote result's failure branch, kept for UI classification. */
+export type ClientRemoteFailure = Extract<RemoteResult<never>, { readonly ok: false }>['error']
+
+/** Unwrap a generated Remote result while retaining its caller-facing message. */
+export function remoteValue<T>(result: RemoteResult<T>): T {
+  if (result.ok) return result.value
+  throw new Error(result.error.message)
 }
-export interface ClientSettingsRemote { describe(): Promise<{ namespaces: readonly { ns: string; revision: number }[] }>; mutate(ns: string, ops: readonly unknown[], expectedRevision: number | undefined): Promise<unknown> }

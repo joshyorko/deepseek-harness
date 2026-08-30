@@ -1,10 +1,22 @@
 import { randomBytes } from 'node:crypto'
 import { Context } from '@deepseek-ai/cordis'
-import type { AuthorizationEntry, AuthorizationInteraction, AuthorizationPrompt } from '@deepseek-ai/dsh-authorization'
+import {
+  AuthorizationDeclinedError,
+  type AuthorizationEntry,
+  type AuthorizationInteraction,
+  type AuthorizationNotice,
+  type AuthorizationPrompt,
+} from '@deepseek-ai/dsh-authorization'
 import { parseCredentialKey } from '@deepseek-ai/dsh-credentials'
 import type { CredentialKey } from '@deepseek-ai/dsh-credentials/types'
 import { Remote, TypertRemoteFailure, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import type { AuthorizationAttemptView, AuthorizationFlowView, AuthorizationStartView } from './types.ts'
+import type {
+  AuthorizationAttemptView,
+  AuthorizationFlowView,
+  AuthorizationNoticeView,
+  AuthorizationPromptView,
+  AuthorizationStartView,
+} from './types.ts'
 
 export type * from './types.ts'
 
@@ -17,8 +29,14 @@ interface Attempt {
   readonly key: CredentialKey
   readonly controller: AbortController
   state: AuthorizationAttemptView['state']
-  notices: AuthorizationAttemptView['notices']
-  prompt: { readonly id: string; readonly prompt: AuthorizationPrompt; readonly resolve: (value: string) => void; readonly reject: (error: unknown) => void; readonly dispose: () => void } | undefined
+  notices: AuthorizationNoticeView[]
+  prompt: {
+    readonly id: string
+    readonly prompt: AuthorizationPrompt
+    readonly resolve: (value: string) => void
+    readonly reject: (error: unknown) => void
+    readonly dispose: () => void
+  } | undefined
   error: AuthorizationAttemptView['error']
 }
 
@@ -28,13 +46,41 @@ function failure(code: string, message: string): TypertRemoteFailure {
   return new TypertRemoteFailure({ code, message, details: {} })
 }
 
-function copyPrompt(prompt: AuthorizationPrompt): AuthorizationPrompt {
-  if (prompt.kind === 'select') return { kind: 'select', message: prompt.message, options: prompt.options.map(option => ({ ...option })) }
-  return { kind: prompt.kind, message: prompt.message, ...(prompt.placeholder === undefined ? {} : { placeholder: prompt.placeholder }) }
+/** Keep provider notices inside the deliberately small wire vocabulary. */
+function copyNotice(notice: AuthorizationNotice): AuthorizationNoticeView {
+  return {
+    message: notice.message,
+    ...notice.url === undefined ? {} : { url: notice.url },
+    ...notice.code === undefined ? {} : { code: notice.code },
+  }
+}
+
+function copyPrompt(id: string, prompt: AuthorizationPrompt): AuthorizationPromptView {
+  if (prompt.kind === 'select') {
+    return {
+      id,
+      kind: 'select',
+      message: prompt.message,
+      options: prompt.options.map(option => ({ ...option })),
+    }
+  }
+  return {
+    id,
+    kind: prompt.kind,
+    message: prompt.message,
+    ...prompt.placeholder === undefined ? {} : { placeholder: prompt.placeholder },
+  }
 }
 
 function copyStatus(attempt: Attempt): AuthorizationAttemptView {
-  return { attemptId: attempt.id, key: attempt.key, state: attempt.state, notices: attempt.notices.map(notice => ({ ...notice })), ...(attempt.prompt === undefined ? {} : { prompt: { ...copyPrompt(attempt.prompt.prompt), id: attempt.prompt.id } }), ...(attempt.error === undefined ? {} : { error: { ...attempt.error } }) }
+  return {
+    attemptId: attempt.id,
+    key: attempt.key,
+    state: attempt.state,
+    notices: attempt.notices.map(notice => ({ ...notice })),
+    ...attempt.prompt === undefined ? {} : { prompt: copyPrompt(attempt.prompt.id, attempt.prompt.prompt) },
+    ...attempt.error === undefined ? {} : { error: { ...attempt.error } },
+  }
 }
 
 /** Optional self-hosted Remote owner for browser-driven authorization flows. */
@@ -47,7 +93,7 @@ export class AuthorizationController extends TypertRemoteService {
     super(ctx, 'authorizationController', { namespace: 'authorization' })
     this.context = ctx
     ctx.effect(() => () => {
-      for (const attempt of this.attempts.values()) attempt.controller.abort()
+      for (const attempt of this.attempts.values()) this.cancelAttempt(attempt)
       this.attempts.clear()
     }, 'llm-pi-ai-oauth.dispose')
   }
@@ -57,9 +103,17 @@ export class AuthorizationController extends TypertRemoteService {
     const flows = this.context.authorization.list()
     const keys = new Set(flows.map(flow => flow.key))
     for (const key of this.attempts.keys()) if (!keys.has(key)) this.attempts.delete(key)
-    return Promise.all(flows.map(async flow => {
+    return Promise.all(flows.map(async (flow) => {
       const record = await this.context.credentials.describeRecord(flow.key)
-      return { key: flow.key, label: flow.label, methods: flow.methods.map(method => ({ ...method })), inFlight: this.attempts.has(flow.key), configured: record.configured, writable: record.writable }
+      const attempt = this.attempts.get(flow.key)
+      return {
+        key: flow.key,
+        label: flow.label,
+        methods: flow.methods.map(method => ({ ...method })),
+        inFlight: flow.inFlight || (attempt !== undefined && isActive(attempt)),
+        configured: record.configured,
+        writable: record.writable,
+      }
     }))
   }
 
@@ -67,7 +121,8 @@ export class AuthorizationController extends TypertRemoteService {
   start(key: string, method: string): AuthorizationStartView {
     const flow = this.flow(key)
     if (flow.methods.every(candidate => candidate.id !== method)) throw failure('invalid-method', `authorization method "${method}" is not available`)
-    if (this.attempts.has(flow.key)) throw failure('already-in-flight', 'an authorization attempt is already running')
+    const previous = this.attempts.get(flow.key)
+    if (previous !== undefined && isActive(previous)) throw failure('already-in-flight', 'an authorization attempt is already running')
     const controller = new AbortController()
     const attempt: Attempt = { id: randomBytes(18).toString('base64url'), key: flow.key, controller, state: 'running', notices: [], prompt: undefined, error: undefined }
     this.attempts.set(flow.key, attempt)
@@ -88,18 +143,16 @@ export class AuthorizationController extends TypertRemoteService {
     if (attempt.prompt.prompt.kind === 'select' && !attempt.prompt.prompt.options.some(option => option.id === value)) throw failure('invalid-response', 'choose one of the listed options')
     const prompt = attempt.prompt
     prompt.dispose()
-    prompt.resolve(value)
     attempt.prompt = undefined
+    attempt.state = 'running'
+    prompt.resolve(value)
     return copyStatus(attempt)
   }
 
   @Remote('cancel')
   cancel(key: string, attemptId: string): AuthorizationAttemptView {
     const attempt = this.attempt(key, attemptId)
-    attempt.controller.abort()
-    attempt.state = 'cancelled'
-    if (attempt.prompt !== undefined) { attempt.prompt.dispose(); attempt.prompt.reject(new Error('attempt cancelled')); attempt.prompt = undefined }
-    this.context.authorization.cancel(attempt.key)
+    this.cancelAttempt(attempt)
     return copyStatus(attempt)
   }
 
@@ -107,7 +160,7 @@ export class AuthorizationController extends TypertRemoteService {
   async signOut(key: string): Promise<void> {
     const flow = this.flow(key)
     const active = this.attempts.get(flow.key)
-    if (active !== undefined && active.state === 'running') { active.controller.abort(); active.state = 'cancelled'; this.context.authorization.cancel(active.key) }
+    if (active !== undefined && isActive(active)) this.cancelAttempt(active)
     await this.context.credentials.deleteRecord(flow.key)
   }
 
@@ -115,7 +168,7 @@ export class AuthorizationController extends TypertRemoteService {
     let parsed: CredentialKey
     try { parsed = parseCredentialKey(value) } catch { throw failure('invalid-key', 'authorization key is invalid') }
     const flow = this.context.authorization.describe(parsed)
-    if (flow === undefined) throw failure('unknown-key', `no authorization flow is registered for "${value}"`)
+    if (flow === undefined) throw failure('unknown-key', 'that authorization flow is unavailable')
     return flow
   }
 
@@ -129,29 +182,66 @@ export class AuthorizationController extends TypertRemoteService {
 
   private async run(flow: AuthorizationEntry, attempt: Attempt, method: string): Promise<void> {
     const interaction: AuthorizationInteraction = {
-      notify: notice => {
-        if (attempt.state !== 'running') return
-        attempt.notices = [...attempt.notices, { ...notice }].slice(-MAX_NOTICES)
+      notify: (notice) => {
+        if (!isCurrent(this.attempts, attempt) || !isActive(attempt)) return
+        attempt.notices = [...attempt.notices, copyNotice(notice)].slice(-MAX_NOTICES)
       },
       prompt: prompt => new Promise<string>((resolve, reject) => {
         if (attempt.prompt !== undefined) { reject(failure('already-prompting', 'another prompt is already active')); return }
         const id = randomBytes(12).toString('base64url')
         const dispose = (): void => prompt.signal?.removeEventListener('abort', onAbort)
-        const onAbort = (): void => { attempt.prompt = undefined; reject(new Error('prompt cancelled')) }
+        const onAbort = (): void => {
+          if (attempt.prompt?.id !== id) return
+          attempt.prompt = undefined
+          if (attempt.state === 'prompt') attempt.state = 'running'
+          reject(new Error('prompt cancelled'))
+        }
         prompt.signal?.addEventListener('abort', onAbort, { once: true })
+        if (!isCurrent(this.attempts, attempt) || !isActive(attempt)) { reject(new Error('attempt ended')); return }
         attempt.state = 'prompt'
-        attempt.prompt = { id, prompt: copyPrompt(prompt), resolve, reject, dispose }
+        attempt.prompt = { id, prompt, resolve, reject, dispose }
       }),
     }
     try {
-      await this.context.authorization.begin({ key: flow.key, method, interaction, signal: attempt.controller.signal })
-      if (attempt.state === 'running' || attempt.state === 'prompt') attempt.state = 'authorized'
+      const outcome = await this.context.authorization.begin({
+        key: flow.key,
+        method,
+        interaction,
+        signal: attempt.controller.signal,
+      })
+      if (isCurrent(this.attempts, attempt) && isActive(attempt)) attempt.state = outcome.status
     } catch {
-      if (attempt.state === 'running' || attempt.state === 'prompt') attempt.state = attempt.controller.signal.aborted ? 'cancelled' : 'failed'
-      if (attempt.state === 'failed') attempt.error = { code: 'authorization-failed', message: 'authorization failed; try again' }
+      if (isCurrent(this.attempts, attempt) && isActive(attempt)) {
+        attempt.state = attempt.controller.signal.aborted ? 'cancelled' : 'failed'
+        if (attempt.state === 'failed') attempt.error = { code: 'authorization-failed', message: 'Authorization failed. Try again.' }
+      }
       if (attempt.prompt !== undefined) { attempt.prompt.dispose(); attempt.prompt.reject(new Error('attempt ended')); attempt.prompt = undefined }
     }
   }
+
+  /** Cancel an owned attempt and immediately publish its terminal state. */
+  private cancelAttempt(attempt: Attempt): void {
+    if (!isActive(attempt)) return
+    attempt.controller.abort()
+    attempt.state = 'cancelled'
+    if (attempt.prompt !== undefined) {
+      const prompt = attempt.prompt
+      prompt.dispose()
+      attempt.prompt = undefined
+      prompt.reject(new AuthorizationDeclinedError())
+    }
+    this.context.authorization.cancel(attempt.key)
+  }
+}
+
+/** Whether an attempt can still receive notices or a prompt. */
+function isActive(attempt: Attempt): boolean {
+  return attempt.state === 'running' || attempt.state === 'prompt'
+}
+
+/** Completion from an older attempt must never mutate a replacement. */
+function isCurrent(attempts: ReadonlyMap<CredentialKey, Attempt>, attempt: Attempt): boolean {
+  return attempts.get(attempt.key) === attempt
 }
 
 export const apply = (ctx: Context): void => { new AuthorizationController(ctx) }

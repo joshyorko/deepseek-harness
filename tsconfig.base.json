@@ -344,6 +344,8 @@
       "@deepseek-ai/dsh-llm-mock-server/invariant": ["./packages/test-support/llm-mock-server/src/invariant.ts"],
       "@deepseek-ai/dsh-llm-pi-ai": ["./packages/llm/llm-pi-ai/src"],
       "@deepseek-ai/dsh-llm-pi-ai/invariant": ["./packages/llm/llm-pi-ai/src/invariant.ts"],
+      "@deepseek-ai/dsh-llm-pi-ai-oauth": ["./packages/llm/llm-pi-ai-oauth/src"],
+      "@deepseek-ai/dsh-llm-pi-ai-oauth/invariant": ["./packages/llm/llm-pi-ai-oauth/src/invariant.ts"],
       "@deepseek-ai/dsh-llm-replay": ["./packages/test-support/llm-replay/src"],
       "@deepseek-ai/dsh-llm-replay/invariant": ["./packages/test-support/llm-replay/src/invariant.ts"],
       "@deepseek-ai/dsh-llm-retry": ["./packages/llm/llm-retry/src"],

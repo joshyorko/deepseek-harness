@@ -3,5 +3,6 @@ import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 const PACKAGE_NAME = '@deepseek-ai/dsh-llm-pi-ai-oauth'
 export const name = 'llm-pi-ai-oauth-invariant'
 export const inject = ['invariants']
+/** No runtime invariant: the authorization seam owns attempt release and credential commit relations. */
 const install: InvariantInstaller = () => {}
 export const apply = (ctx: Context): Promise<() => void> => Promise.resolve(ctx.invariants.register(PACKAGE_NAME, install))
