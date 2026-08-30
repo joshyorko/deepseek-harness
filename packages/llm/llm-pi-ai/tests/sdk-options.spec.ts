@@ -1,14 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { StreamFunction } from '@earendil-works/pi-ai'
 
-const streamSimple = vi.hoisted(() => vi.fn())
+const streamSimple = vi.hoisted(() => vi.fn<StreamFunction<'openai-responses'>>())
 
 // A hand-declared route is built by `createProvider` over the protocol table in
 // `src/provider.ts`, so the table's lazy api module is the SDK boundary this
 // test can observe. A catalog route dispatches through pi-ai's own provider and
 // would not see this mock.
-vi.mock('@earendil-works/pi-ai/api/openai-completions.lazy', () => ({
-  openAICompletionsApi: () => ({ stream: streamSimple, streamSimple }),
+vi.mock('@earendil-works/pi-ai/api/openai-responses.lazy', () => ({
+  openAIResponsesApi: () => ({ stream: streamSimple, streamSimple }),
 }))
 
 import { PiAiAdapter } from '../src/adapter.ts'
@@ -22,9 +23,10 @@ function gatewayAdapter(): PiAiAdapter {
   return new PiAiAdapter({
     profiles: () => resolveProfiles({
       'local-gateway': {
-        api: 'openai-completions',
+        api: 'openai-responses',
         baseURL: 'http://127.0.0.1:9/v1',
         models: [{ id: 'local-model', contextWindow: 8192, maxTokens: 1024 }],
+        serviceTier: 'priority',
       },
     }),
     resolveApiKey: () => Promise.resolve('test-key'),
@@ -66,10 +68,23 @@ describe('pi-ai SDK retry boundary', () => {
     expect(streamSimple.mock.calls[0]?.[0]).toMatchObject({
       id: 'local-model',
       provider: 'local-gateway',
-      api: 'openai-completions',
+      api: 'openai-responses',
       baseUrl: 'http://127.0.0.1:9/v1',
       contextWindow: 8192,
       maxTokens: 1024,
     })
+  })
+
+  it('adds the configured service tier to the provider payload', async () => {
+    streamSimple.mockImplementation(() => { throw new Error('mock SDK boundary') })
+
+    await drain(gatewayAdapter())
+
+    const [model, , options] = streamSimple.mock.calls[0] ?? []
+    if (model === undefined || options === undefined) throw new Error('provider SDK was not called')
+    const onPayload = options.onPayload
+    expect(onPayload).toBeTypeOf('function')
+    expect(await onPayload?.({ model: 'local-model' }, model))
+      .toEqual({ model: 'local-model', service_tier: 'priority' })
   })
 })

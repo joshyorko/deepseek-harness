@@ -152,6 +152,31 @@ describe('PiAiAdapter provider routing', () => {
     expect(server.requests[0]).not.toHaveProperty('dsh_plugin_packages')
   })
 
+  it('sends the configured service tier on a Codex Responses request', async () => {
+    const server = await mockServer([{ status: 400 }])
+    const claim = Buffer.from(JSON.stringify({
+      'https://api.openai.com/auth': { chatgpt_account_id: 'account-test' },
+    })).toString('base64url')
+    vi.stubEnv('PI_CODEX_TOKEN', `e30.${claim}.signature`)
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: {
+        'openai-codex': {
+          apiKeyEnv: 'PI_CODEX_TOKEN',
+          baseURL: `${server.url}/v1`,
+          serviceTier: 'priority',
+          transport: 'sse',
+        },
+      },
+    })
+
+    await assemble(ctx, { provider: 'openai-codex', model: 'gpt-5.6-sol', messages: [] })
+
+    expect(server.paths).toEqual(['/v1/codex/responses'])
+    expect(server.requests[0]).toMatchObject({ service_tier: 'priority' })
+  })
+
   it('uses a dynamic request effort and reports unsupported efforts before network I/O', async () => {
     const server = await mockServer([{ events: textEvents }, { events: textEvents }])
     const ctx = await harness(server.url, { reasoning: 'max' })

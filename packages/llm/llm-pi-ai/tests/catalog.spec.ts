@@ -312,6 +312,17 @@ describe('hand-declared providers', () => {
     })).toThrow(/needs a baseURL/)
   })
 
+  it('rejects a service tier on a route that does not use OpenAI Responses', () => {
+    expect(() => resolveProfiles({
+      'acme-gateway': {
+        api: 'openai-completions',
+        baseURL: 'https://acme.test',
+        models: [{ id: 'm' }],
+        serviceTier: 'priority',
+      },
+    })).toThrow(/serviceTier requires OpenAI Responses/)
+  })
+
   it.each(['bedrock-converse-stream', 'google-vertex', 'azure-openai-responses', 'openai-codex-responses'])(
     'refuses %s, whose authentication a profile cannot express',
     (api) => {

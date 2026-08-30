@@ -14,7 +14,7 @@
  * @module dsh-llm-pi-ai/config
  */
 
-import type { CacheRetention, ChatTemplateKwargValue, ModelThinkingLevel, Provider, ThinkingBudgets, Transport } from '@earendil-works/pi-ai'
+import type { Api, CacheRetention, ChatTemplateKwargValue, ModelThinkingLevel, Provider, ThinkingBudgets, Transport } from '@earendil-works/pi-ai'
 import z from '@deepseek-ai/schemastery'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
@@ -62,6 +62,22 @@ export const DEFAULT_CONTEXT_WINDOW = 262_144
 
 /** Output capability assumed for a model neither configuration nor the catalog sizes. */
 export const DEFAULT_MAX_TOKENS = 32_768
+
+const SERVICE_TIERS = ['auto', 'default', 'flex', 'scale', 'priority'] as const
+
+/** OpenAI Responses service tier written to the provider request. */
+export type PiAiServiceTier = (typeof SERVICE_TIERS)[number]
+
+const SERVICE_TIER_APIS: ReadonlySet<Api> = new Set(['openai-responses', 'openai-codex-responses'])
+
+/**
+ * Whether a wire protocol accepts the OpenAI Responses `service_tier` field.
+ * @param api - pi-ai protocol id.
+ * @returns true for the Responses protocols that consume the field.
+ */
+export function supportsServiceTier(api: Api): api is 'openai-responses' | 'openai-codex-responses' {
+  return SERVICE_TIER_APIS.has(api)
+}
 
 /**
  * Modalities assumed for a model neither configuration nor the catalog
@@ -154,6 +170,8 @@ export interface PiAiProviderProfile {
   cacheRetention?: CacheRetention
   /** Streaming transport preference. */
   transport?: Transport
+  /** OpenAI Responses service tier; rejected when any model on the route uses another protocol. */
+  serviceTier?: PiAiServiceTier
   /** HTTP/provider SDK timeout in milliseconds. */
   timeoutMs?: number
   /** WebSocket connection timeout in milliseconds. */
@@ -327,6 +345,7 @@ const profile = z.object({
   thinkingBudgets,
   cacheRetention: z.union(['none', 'short', 'long']),
   transport: z.union(['sse', 'websocket', 'websocket-cached', 'auto']),
+  serviceTier: z.union(SERVICE_TIERS),
   timeoutMs: z.natural(),
   websocketConnectTimeoutMs: z.natural(),
   streamIdleTimeoutMs: z.number().min(Number.MIN_VALUE).max(MAX_TIMER_DELAY_MS).default(DEFAULT_STREAM_IDLE_TIMEOUT_MS),
@@ -444,6 +463,15 @@ export function resolveProfiles(
       defaultContextWindow: source.defaultContextWindow ?? DEFAULT_CONTEXT_WINDOW,
       defaultMaxTokens: source.defaultMaxTokens ?? DEFAULT_MAX_TOKENS,
     })
+    if (source.serviceTier !== undefined) {
+      const unsupported = catalog.models.find(model => !supportsServiceTier(model.api))
+      if (unsupported !== undefined) {
+        throw new Error(
+          `llm-pi-ai: provider "${provider}" serviceTier requires OpenAI Responses,`
+          + ` but model "${unsupported.id}" uses api "${unsupported.api}"`,
+        )
+      }
+    }
     const { apiKeyEnv, retryPolicy, models: _models, displayName: _displayName, ...rest } = source
     resolved.set(provider, {
       ...rest,
