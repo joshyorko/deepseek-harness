@@ -11,6 +11,8 @@ export type AuthorizationAttemptState = 'running' | 'prompt' | 'authorized' | 'c
 export interface AuthorizationPromptView { readonly id: string; readonly kind: 'text' | 'secret' | 'select'; readonly message: string; readonly placeholder?: string; readonly options?: readonly { readonly id: string; readonly label: string; readonly description?: string }[] }
 
 export interface AuthorizationAttemptView {
+  readonly attemptId: string
+  readonly key: string
   readonly state: AuthorizationAttemptState
   readonly notices: readonly AuthorizationNotice[]
   readonly prompt?: AuthorizationPromptView

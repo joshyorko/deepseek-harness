@@ -34,7 +34,7 @@ function copyPrompt(prompt: AuthorizationPrompt): AuthorizationPrompt {
 }
 
 function copyStatus(attempt: Attempt): AuthorizationAttemptView {
-  return { state: attempt.state, notices: attempt.notices.map(notice => ({ ...notice })), ...(attempt.prompt === undefined ? {} : { prompt: { ...copyPrompt(attempt.prompt.prompt), id: attempt.prompt.id } }), ...(attempt.error === undefined ? {} : { error: { ...attempt.error } }) }
+  return { attemptId: attempt.id, key: attempt.key, state: attempt.state, notices: attempt.notices.map(notice => ({ ...notice })), ...(attempt.prompt === undefined ? {} : { prompt: { ...copyPrompt(attempt.prompt.prompt), id: attempt.prompt.id } }), ...(attempt.error === undefined ? {} : { error: { ...attempt.error } }) }
 }
 
 /** Optional self-hosted Remote owner for browser-driven authorization flows. */
