@@ -7,3 +7,4 @@ export interface ClientAuthorizationRemote {
   cancel(key: string, attemptId: string): Promise<AuthorizationAttemptView>
   signOut(key: string): Promise<void>
 }
+export interface ClientSettingsRemote { describe(): Promise<{ namespaces: readonly { ns: string; revision: number }[] }>; mutate(ns: string, ops: readonly unknown[], expectedRevision: number | undefined): Promise<unknown> }
