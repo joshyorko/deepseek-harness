@@ -6365,6 +6365,10 @@ importers:
         version: link:../../util/timeout
 
   packages/llm/llm-pi-ai-oauth:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^

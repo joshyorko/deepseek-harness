@@ -61,6 +61,7 @@ fi
 )
 
 dsh_web_log="$(mktemp)"
+dsh_web_headers="$(mktemp)"
 dsh_web_pid=""
 cleanup_dsh_web() {
   if [[ -n "$dsh_web_pid" ]] && kill -0 "$dsh_web_pid" 2>/dev/null; then
@@ -70,6 +71,7 @@ cleanup_dsh_web() {
     wait "$dsh_web_pid" 2>/dev/null || true
   fi
   rm -f -- "$dsh_web_log"
+  rm -f -- "$dsh_web_headers"
 }
 trap cleanup_dsh_web EXIT
 trap 'exit 130' INT TERM
@@ -82,10 +84,15 @@ for _attempt in {1..60}; do
   if ! kill -0 "$dsh_web_pid" 2>/dev/null; then
     break
   fi
-  dsh_web_url="$(grep -Eo 'http://127\.0\.0\.1:[0-9]+' "$dsh_web_log" | head -n 1 || true)"
-  if [[ -n "$dsh_web_url" ]] && curl --fail --silent --show-error --max-time 2 --output /dev/null "$dsh_web_url/"; then
-    dsh_web_ready=1
-    break
+  dsh_web_url="$(grep -Eo 'http://127\.0\.0\.1:[0-9]+/\?token=[A-Za-z0-9_-]+' "$dsh_web_log" | head -n 1 || true)"
+  if [[ -n "$dsh_web_url" ]]; then
+    dsh_web_base="${dsh_web_url%%\?token=*}"
+    curl --silent --show-error --max-time 2 --dump-header "$dsh_web_headers" --output /dev/null "$dsh_web_url" || true
+    dsh_web_cookie="$(awk 'tolower($1) == "set-cookie:" { sub(/\r$/, "", $0); sub(/^[^:]*:[[:space:]]*/, "", $0); sub(/;.*/, "", $0); print; exit }' "$dsh_web_headers")"
+    if [[ -n "$dsh_web_cookie" ]] && curl --fail --silent --show-error --max-time 2 --cookie "$dsh_web_cookie" --output /dev/null "$dsh_web_base"; then
+      dsh_web_ready=1
+      break
+    fi
   fi
   sleep 0.5
 done

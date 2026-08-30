@@ -27,7 +27,7 @@ export async function apply(ctx: Context): Promise<void> {
     'llm-pi-ai-oauth.client: dictionaries',
   )
   const t = ctx.locale.bind(NS)
-  const authorization = ctx.remote.authorization as ClientAuthorizationRemote
+  const authorization = ctx.get('remote.authorization') as ClientAuthorizationRemote
   const settings = ctx.remote.settings as ClientSettingsRemote
   ctx.slots.inject('settings.models.provider-card', () => ctx.slots.register({
     name: 'settings.models.provider-card', key: 'llm-pi-ai', locale: NS,
@@ -35,6 +35,6 @@ export async function apply(ctx: Context): Promise<void> {
   }, AuthorizationCard))
 }
 
-export const inject = ['slots', 'locale', 'remote']
+export const inject = ['slots', 'locale', 'remote', 'remote.settings']
 export const name = 'llm-pi-ai-oauth.client'
 export type { AuthorizationCardProps } from './card.tsx'
