@@ -388,9 +388,11 @@ export class PiAiAdapter extends LlmAdapter {
           ? snapshot.models.stream(model, context, {
             ...requestOptions,
             reasoningEffort: reasoning === 'off' ? undefined : reasoning,
-            // The installed OpenAI SDK type predates documented Fast mode;
-            // pi-ai forwards this runtime value through its Responses path.
-            serviceTier: profile.serviceTier as Exclude<typeof profile.serviceTier, 'fast'>,
+            // The installed OpenAI SDK type predates documented Fast mode.
+            // Standard Responses forwards `fast`; Codex accepts its `priority` equivalent.
+            serviceTier: (model.api === 'openai-codex-responses' && profile.serviceTier === 'fast'
+              ? 'priority'
+              : profile.serviceTier) as Exclude<typeof profile.serviceTier, 'fast'>,
           })
           : (() => { throw new Error(`llm-pi-ai: service tier reached unsupported api "${model.api}"`) })()
       const iterator = toStreamChunks(events, model.contextWindow, options.signal)[Symbol.asyncIterator]()

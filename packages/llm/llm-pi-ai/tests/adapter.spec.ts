@@ -174,7 +174,7 @@ describe('PiAiAdapter provider routing', () => {
     await assemble(ctx, { provider: 'openai-codex', model: 'gpt-5.6-sol', messages: [] })
 
     expect(server.paths).toEqual(['/v1/codex/responses'])
-    expect(server.requests[0]).toMatchObject({ service_tier: 'fast' })
+    expect(server.requests[0]).toMatchObject({ service_tier: 'priority' })
   })
 
   it('uses a dynamic request effort and reports unsupported efforts before network I/O', async () => {
