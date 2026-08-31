@@ -10,13 +10,15 @@ OpenAI Responses deployments can select a service tier per request, but a pi-ai 
 
 ## Decision
 
-`PiAiProviderProfile.serviceTier` accepts `auto`, `default`, `flex`, `scale`, or `priority`. Profile resolution rejects the field unless every model on the route uses `openai-responses` or `openai-codex-responses`, so other provider protocols never receive an OpenAI-only field.
+`PiAiProviderProfile.serviceTier` accepts `auto`, `default`, `flex`, `scale`, `priority`, or `fast`. Profile resolution rejects the field unless every model on the route uses `openai-responses` or `openai-codex-responses`, so other provider protocols never receive an OpenAI-only field. `fast` follows [OpenAI Fast mode](https://developers.openai.com/api/docs/guides/fast-mode); OpenAI also accepts `priority` for the same behavior on supported models.
 
-The adapter supplies pi-ai's `onPayload` hook and adds `service_tier` after `streamSimple()` has assembled the complete payload. The hook retains all existing fields and leaves transport, reasoning, compression, retry, and authentication behavior unchanged. Request-time profile resolution follows the existing [LLM configuration decision](../architecture/2026-07-29-request-level-llm-config-credentials.md).
+The adapter uses pi-ai's API-specific `Models.stream()` path when a Responses route selects a tier. That path owns request construction, response-tier resolution, and usage accounting. Routes without a tier and every other protocol continue through `Models.streamSimple()`. Transport, reasoning, compression, retry, endpoint, headers, and authentication behavior stay unchanged. Request-time profile resolution follows the existing [LLM configuration decision](../architecture/2026-07-29-request-level-llm-config-credentials.md).
 
 ## Alternatives considered
 
 **Pass `serviceTier` directly to `streamSimple()`.** Rejected because the helper drops that option before the provider request is sent.
+
+**Add `service_tier` through `onPayload`.** Rejected because changing only the completed JSON bypasses pi-ai's response-tier resolution and usage accounting.
 
 **Add `service_tier` to every pi-ai protocol.** Rejected because the field belongs to OpenAI Responses and another provider may reject an unknown request field.
 

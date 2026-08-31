@@ -165,7 +165,7 @@ describe('PiAiAdapter provider routing', () => {
         'openai-codex': {
           apiKeyEnv: 'PI_CODEX_TOKEN',
           baseURL: `${server.url}/v1`,
-          serviceTier: 'priority',
+          serviceTier: 'fast',
           transport: 'sse',
         },
       },
@@ -174,7 +174,7 @@ describe('PiAiAdapter provider routing', () => {
     await assemble(ctx, { provider: 'openai-codex', model: 'gpt-5.6-sol', messages: [] })
 
     expect(server.paths).toEqual(['/v1/codex/responses'])
-    expect(server.requests[0]).toMatchObject({ service_tier: 'priority' })
+    expect(server.requests[0]).toMatchObject({ service_tier: 'fast' })
   })
 
   it('uses a dynamic request effort and reports unsupported efforts before network I/O', async () => {

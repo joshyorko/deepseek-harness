@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { StreamFunction } from '@earendil-works/pi-ai'
 
+const stream = vi.hoisted(() => vi.fn<StreamFunction<'openai-responses'>>())
 const streamSimple = vi.hoisted(() => vi.fn<StreamFunction<'openai-responses'>>())
 
 // A hand-declared route is built by `createProvider` over the protocol table in
@@ -9,24 +10,27 @@ const streamSimple = vi.hoisted(() => vi.fn<StreamFunction<'openai-responses'>>(
 // test can observe. A catalog route dispatches through pi-ai's own provider and
 // would not see this mock.
 vi.mock('@earendil-works/pi-ai/api/openai-responses.lazy', () => ({
-  openAIResponsesApi: () => ({ stream: streamSimple, streamSimple }),
+  openAIResponsesApi: () => ({ stream, streamSimple }),
 }))
 
 import { PiAiAdapter } from '../src/adapter.ts'
 import { resolveProfiles } from '../src/config.ts'
 import { memoryAuth } from './auth-double.ts'
 
-afterEach(() => { streamSimple.mockReset() })
+afterEach(() => {
+  stream.mockReset()
+  streamSimple.mockReset()
+})
 
 /** A hand-declared OpenAI-compatible route with one fully described model. */
-function gatewayAdapter(): PiAiAdapter {
+function gatewayAdapter(serviceTier?: 'fast'): PiAiAdapter {
   return new PiAiAdapter({
     profiles: () => resolveProfiles({
       'local-gateway': {
         api: 'openai-responses',
         baseURL: 'http://127.0.0.1:9/v1',
         models: [{ id: 'local-model', contextWindow: 8192, maxTokens: 1024 }],
-        serviceTier: 'priority',
+        ...serviceTier === undefined ? {} : { serviceTier },
       },
     }),
     resolveApiKey: () => Promise.resolve('test-key'),
@@ -75,16 +79,13 @@ describe('pi-ai SDK retry boundary', () => {
     })
   })
 
-  it('adds the configured service tier to the provider payload', async () => {
-    streamSimple.mockImplementation(() => { throw new Error('mock SDK boundary') })
+  it('dispatches a configured Fast tier through the Responses API stream', async () => {
+    stream.mockImplementation(() => { throw new Error('mock SDK boundary') })
 
-    await drain(gatewayAdapter())
+    await drain(gatewayAdapter('fast'))
 
-    const [model, , options] = streamSimple.mock.calls[0] ?? []
-    if (model === undefined || options === undefined) throw new Error('provider SDK was not called')
-    const onPayload = options.onPayload
-    expect(onPayload).toBeTypeOf('function')
-    expect(await onPayload?.({ model: 'local-model' }, model))
-      .toEqual({ model: 'local-model', service_tier: 'priority' })
+    expect(streamSimple).not.toHaveBeenCalled()
+    expect(stream).toHaveBeenCalledOnce()
+    expect(stream.mock.calls[0]?.[2]).toMatchObject({ serviceTier: 'fast', maxRetries: 0, apiKey: 'test-key' })
   })
 })

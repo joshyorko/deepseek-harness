@@ -118,16 +118,12 @@ function profileOptions(
   apiKey: string | undefined,
 ): SimpleStreamOptions {
   const enabledReasoning: ThinkingLevel | undefined = reasoning === 'off' ? undefined : reasoning
-  const serviceTier = profile.serviceTier
   return {
     ...apiKey === undefined ? {} : { apiKey },
     ...enabledReasoning === undefined ? {} : { reasoning: enabledReasoning },
     ...profile.thinkingBudgets === undefined ? {} : { thinkingBudgets: profile.thinkingBudgets },
     ...profile.cacheRetention === undefined ? {} : { cacheRetention: profile.cacheRetention },
     ...profile.transport === undefined ? {} : { transport: profile.transport },
-    ...serviceTier === undefined ? {} : {
-      onPayload: payload => ({ ...(payload as Record<string, unknown>), service_tier: serviceTier }),
-    },
     ...profile.timeoutMs === undefined ? {} : { timeoutMs: profile.timeoutMs },
     ...profile.websocketConnectTimeoutMs === undefined ? {} : { websocketConnectTimeoutMs: profile.websocketConnectTimeoutMs },
     // The agent recovery layer owns visible attempts; one adapter call is one SDK attempt.
@@ -376,7 +372,7 @@ export class PiAiAdapter extends LlmAdapter {
             maxBytes: profile.requestImageMaxBytes,
           },
         }, onReplayDegrade)
-      const events = snapshot.models.streamSimple(model, context, {
+      const requestOptions = {
         ...profileOptions(profile, reasoning, apiKey),
         ...options.temperature === undefined ? {} : { temperature: options.temperature },
         ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },
@@ -385,7 +381,18 @@ export class PiAiAdapter extends LlmAdapter {
         // Profile headers are deployment-owned; attribution names are
         // Harness-owned and therefore win collisions.
         headers: requestHeaders(profile.headers),
-      })
+      }
+      const events = profile.serviceTier === undefined
+        ? snapshot.models.streamSimple(model, context, requestOptions)
+        : model.api === 'openai-responses' || model.api === 'openai-codex-responses'
+          ? snapshot.models.stream(model, context, {
+            ...requestOptions,
+            reasoningEffort: reasoning === 'off' ? undefined : reasoning,
+            // The installed OpenAI SDK type predates documented Fast mode;
+            // pi-ai forwards this runtime value through its Responses path.
+            serviceTier: profile.serviceTier as Exclude<typeof profile.serviceTier, 'fast'>,
+          })
+          : (() => { throw new Error(`llm-pi-ai: service tier reached unsupported api "${model.api}"`) })()
       const iterator = toStreamChunks(events, model.contextWindow, options.signal)[Symbol.asyncIterator]()
       let exhausted = false
       try {

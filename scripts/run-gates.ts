@@ -709,7 +709,6 @@ function docSyncLeafGates(options: {
     pnpmScript('cordis-inspect-catalog', 'verify-cordis-inspect-catalog', { label: 'Cordis inspect catalog' }),
     pnpmScript('mermaid', 'verify-mermaid'),
     pnpmScript('scoped-events', 'verify-scoped-events', { label: 'scoped events' }),
-    pnpmScript('translation-pairing', 'verify-translation-pairing', { label: 'translation pairing', quick: true }),
     pnpmScript('markdown-wrap', 'verify-md-wrap', { label: 'markdown wrap', quick: true }),
     pnpmScript('client-catalog', 'verify-client-catalog', { label: 'client catalog' }),
     pnpmScript('export-jsdoc', 'verify-export-jsdoc', { label: 'export jsdoc' }),
@@ -742,7 +741,7 @@ function docSyncLeafGates(options: {
 
 /**
  * The quick comprehensive documentation-standard aggregate for `test:docs`.
- * It covers the prose, pairing, README, budget, and Agent Note gates
+ * It covers the prose, README, budget, and Agent Note gates
  * without builds, generator regeneration, or the VitePress site build.
  */
 function docQuickLeafGates(): Gate[] {

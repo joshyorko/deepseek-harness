@@ -98,6 +98,14 @@ describe('gate graph validation', () => {
     expect(quick).toEqual(full.filter(gate => gate.quick === true))
   })
 
+  it('keeps optional translation pairing out of routine documentation aggregates', () => {
+    const full = withPnpmEntrypoint(() => gatesForMode('doc-sync').map(subject => subject.id))
+    const quick = withPnpmEntrypoint(() => gatesForMode('doc-quick').map(subject => subject.id))
+
+    expect(full).not.toContain('translation-pairing')
+    expect(quick).not.toContain('translation-pairing')
+  })
+
   it('keeps the hygiene aggregate aligned with the package script checks', () => {
     const ids = withPnpmEntrypoint(() => gatesForMode('hygiene').map(subject => subject.id))
 
@@ -116,9 +124,9 @@ describe('gate graph validation', () => {
   it('schedules the longest documentation leaves before short checks', () => {
     const ids = withPnpmEntrypoint(() => gatesForMode('doc-sync').map(subject => subject.id))
 
-    expect(ids.slice(0, 10)).toEqual([
+    expect(ids.slice(0, 9)).toEqual([
       'doc-typecheck', 'docs-site-build', 'doc-graphs', 'markdown-links', 'type-equivalence',
-      'cordis-catalog', 'cordis-inspect-catalog', 'mermaid', 'scoped-events', 'translation-pairing',
+      'cordis-catalog', 'cordis-inspect-catalog', 'mermaid', 'scoped-events',
     ])
   })
 

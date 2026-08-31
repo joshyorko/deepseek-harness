@@ -63,7 +63,7 @@ export const DEFAULT_CONTEXT_WINDOW = 262_144
 /** Output capability assumed for a model neither configuration nor the catalog sizes. */
 export const DEFAULT_MAX_TOKENS = 32_768
 
-const SERVICE_TIERS = ['auto', 'default', 'flex', 'scale', 'priority'] as const
+const SERVICE_TIERS = ['auto', 'default', 'flex', 'scale', 'priority', 'fast'] as const
 
 /** OpenAI Responses service tier written to the provider request. */
 export type PiAiServiceTier = (typeof SERVICE_TIERS)[number]
