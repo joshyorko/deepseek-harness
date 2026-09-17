@@ -63,7 +63,7 @@ export function AuthorizationCard(props: AuthorizationCardProps): ReactNode {
       namespace.revision,
     )
     if (!result.ok) {
-      throw new Error(result.error.code === 'settings-conflict' ? props.t('conflict') : result.error.message)
+      throw new Error(result.error.code === 'settings/conflict' ? props.t('conflict') : result.error.message)
     }
   }
 

@@ -12,7 +12,7 @@ OpenAI Responses 部署可以为每个请求选择服务层级，但 pi-ai 提�
 
 `PiAiProviderProfile.serviceTier` 接受 `auto`、`default`、`flex`、`scale` 或 `priority`。除非路由上的每个模型都使用 `openai-responses` 或 `openai-codex-responses`，配置解析会拒绝该字段，因此其他提供方协议永远不会收到仅适用于 OpenAI 的字段。
 
-适配器提供 pi-ai 的 `onPayload` 钩子，并在 `streamSimple()` 组装完整载荷后加入 `service_tier`。该钩子保留全部现有字段，并且不改变传输、推理、压缩、重试和身份验证行为。请求时配置解析遵循现有的 [LLM 配置决策](../architecture/2026-07-29-request-level-llm-config-credentials.zh.md)。
+适配器提供 pi-ai 的 `onPayload` 钩子，并在 `streamSimple()` 组装完整载荷后加入 `service_tier`。该钩子保留全部现有字段，并且不改变传输、推理、压缩、重试和身份验证行为。请求时配置解析遵循现有的 [LLM 配置决策](../../archived/architecture/2026-07-29-request-level-llm-config-credentials.zh.md)。
 
 ## Alternatives considered
 

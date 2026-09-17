@@ -122,6 +122,63 @@ async begin(request: AuthorizationRequest): Promise<AuthorizationOutcome>
 
 Source: [`packages/credentials/authorization/src/index.ts`](../../packages/credentials/authorization/src/index.ts)
 
+<a id="ctxauthorizationcontroller--authorizationcontroller"></a>
+
+### `ctx.authorizationController` — `AuthorizationController`
+
+Optional self-hosted Remote owner for browser-driven authorization flows.
+
+```ts cordis-catalog
+/**
+ * List registered provider authorization flows and current record state.
+ * @returns the current flow views.
+ */
+@Remote('list') async list(): Promise<readonly AuthorizationFlowView[]>
+
+/** Start one provider authorization attempt.
+ * @param key - credential key of the registered flow.
+ * @param method - provider authorization method to run.
+ * @returns the newly started attempt and its initial status.
+ * @throws {RemoteError} when the key or method is unavailable, or an attempt is active.
+ */
+@Remote('start') start(key: string, method: string): AuthorizationStartView
+
+/** Read the current state of one authorization attempt.
+ * @param key - credential key of the registered flow.
+ * @param attemptId - attempt identifier returned by {@link start}.
+ * @returns the current attempt state.
+ * @throws {RemoteError} when the key or attempt is stale.
+ */
+@Remote('status') status(key: string, attemptId: string): AuthorizationAttemptView
+
+/** Submit a response to the active authorization prompt.
+ * @param key - credential key of the registered flow.
+ * @param attemptId - active attempt identifier.
+ * @param promptId - active prompt identifier.
+ * @param value - selected or entered response.
+ * @returns the updated attempt state.
+ * @throws {RemoteError} when the attempt or response is invalid.
+ */
+@Remote('respond') respond(key: string, attemptId: string, promptId: string, value: string): AuthorizationAttemptView
+
+/** Cancel one active authorization attempt.
+ * @param key - credential key of the registered flow.
+ * @param attemptId - active attempt identifier.
+ * @returns the cancelled attempt state.
+ * @throws {RemoteError} when the key or attempt is stale.
+ */
+@Remote('cancel') cancel(key: string, attemptId: string): AuthorizationAttemptView
+
+/** Delete the stored credential for a provider flow.
+ * @param key - credential key of the registered flow.
+ * @returns a promise that settles after the record is removed.
+ * @throws {RemoteError} when the key is unavailable or record deletion fails.
+ */
+@Remote('signOut') async signOut(key: string): Promise<void>
+```
+
+Source: [`packages/llm/llm-pi-ai-oauth/src/index.ts`](../../packages/llm/llm-pi-ai-oauth/src/index.ts)
+
 <a id="ctxcredentials--credentialprovider-abstract-seam"></a>
 
 ### `ctx.credentials` — `CredentialProvider` (abstract seam)
@@ -227,9 +284,10 @@ Host service backing the generated `ctx.remote.credentials` namespace. It carrie
  * Describe several references for one configuration surface. Batched because
  * a settings page describes every reference its rows name at once, and one
  * round trip keeps those rows from settling separately.
- * @param refs - reference names, at most {@link MAX_DESCRIBE_REFS}; a name outside the grammar rejects the whole call as `bad-request`.
+ * @param refs - reference names, at most {@link MAX_DESCRIBE_REFS}; a name outside the grammar
+ *   rejects the whole call as `gateway/bad-request`.
  * @returns one view per requested name, keyed by that name.
- * @throws TypertRemoteFailure when the request is invalid or no credential provider is mounted.
+ * @throws RemoteError when the request is invalid or no credential provider is mounted.
  */
 @Remote async describe(refs: string[]): Promise<Record<string, CredentialInfo>>
 
@@ -238,14 +296,14 @@ Host service backing the generated `ctx.remote.credentials` namespace. It carrie
  * this direction only: no read path returns it.
  * @param ref - reference name to store under.
  * @param value - the non-empty secret value.
- * @throws TypertRemoteFailure when the request is invalid, no provider is mounted, or the provider refuses the write.
+ * @throws RemoteError when the request is invalid, no provider is mounted, or the provider refuses the write.
  */
 @Remote async set(ref: string, value: string): Promise<void>
 
 /**
  * Remove one reference from a configuration surface.
  * @param ref - reference name to remove.
- * @throws TypertRemoteFailure when the request is invalid, no provider is mounted, or the provider refuses the write.
+ * @throws RemoteError when the request is invalid, no provider is mounted, or the provider refuses the write.
  */
 @Remote async unset(ref: string): Promise<void>
 ```

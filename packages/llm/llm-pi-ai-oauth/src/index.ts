@@ -9,7 +9,7 @@ import {
 } from '@deepseek-ai/dsh-authorization'
 import { parseCredentialKey } from '@deepseek-ai/dsh-credentials'
 import type { CredentialKey } from '@deepseek-ai/dsh-credentials/types'
-import { Remote, TypertRemoteFailure, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   AuthorizationAttemptView,
   AuthorizationFlowView,
@@ -17,6 +17,29 @@ import type {
   AuthorizationPromptView,
   AuthorizationStartView,
 } from './types.ts'
+
+declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface RemoteErrorDetailsMap {
+    'authorization/invalid-method': {}
+    'authorization/already-in-flight': {}
+    'authorization/invalid-key': {}
+    'authorization/unknown-key': {}
+    'authorization/stale-attempt': {}
+    'authorization/invalid-prompt': {}
+    'authorization/invalid-response': {}
+    'authorization/already-prompting': {}
+  }
+}
+
+type AuthorizationRemoteErrorCode =
+  | 'authorization/invalid-method'
+  | 'authorization/already-in-flight'
+  | 'authorization/invalid-key'
+  | 'authorization/unknown-key'
+  | 'authorization/stale-attempt'
+  | 'authorization/invalid-prompt'
+  | 'authorization/invalid-response'
+  | 'authorization/already-prompting'
 
 export type * from './types.ts'
 
@@ -42,8 +65,8 @@ interface Attempt {
 
 const MAX_NOTICES = 32
 
-function failure(code: string, message: string): TypertRemoteFailure {
-  return new TypertRemoteFailure({ code, message, details: {} })
+function failure(code: AuthorizationRemoteErrorCode, message: string): RemoteError<AuthorizationRemoteErrorCode> {
+  return new RemoteError(code, message, {})
 }
 
 /** Keep provider notices inside the deliberately small wire vocabulary. */
@@ -98,6 +121,10 @@ export class AuthorizationController extends TypertRemoteService {
     }, 'llm-pi-ai-oauth.dispose')
   }
 
+  /**
+   * List registered provider authorization flows and current record state.
+   * @returns the current flow views.
+   */
   @Remote('list')
   async list(): Promise<readonly AuthorizationFlowView[]> {
     const flows = this.context.authorization.list()
@@ -117,12 +144,18 @@ export class AuthorizationController extends TypertRemoteService {
     }))
   }
 
+  /** Start one provider authorization attempt.
+   * @param key - credential key of the registered flow.
+   * @param method - provider authorization method to run.
+   * @returns the newly started attempt and its initial status.
+   * @throws {RemoteError} when the key or method is unavailable, or an attempt is active.
+   */
   @Remote('start')
   start(key: string, method: string): AuthorizationStartView {
     const flow = this.flow(key)
-    if (flow.methods.every(candidate => candidate.id !== method)) throw failure('invalid-method', `authorization method "${method}" is not available`)
+    if (flow.methods.every(candidate => candidate.id !== method)) throw failure('authorization/invalid-method', `authorization method "${method}" is not available`)
     const previous = this.attempts.get(flow.key)
-    if (previous !== undefined && isActive(previous)) throw failure('already-in-flight', 'an authorization attempt is already running')
+    if (previous !== undefined && isActive(previous)) throw failure('authorization/already-in-flight', 'an authorization attempt is already running')
     const controller = new AbortController()
     const attempt: Attempt = { id: randomBytes(18).toString('base64url'), key: flow.key, controller, state: 'running', notices: [], prompt: undefined, error: undefined }
     this.attempts.set(flow.key, attempt)
@@ -130,17 +163,31 @@ export class AuthorizationController extends TypertRemoteService {
     return { attemptId: attempt.id, key: flow.key, status: copyStatus(attempt) }
   }
 
+  /** Read the current state of one authorization attempt.
+   * @param key - credential key of the registered flow.
+   * @param attemptId - attempt identifier returned by {@link start}.
+   * @returns the current attempt state.
+   * @throws {RemoteError} when the key or attempt is stale.
+   */
   @Remote('status')
   status(key: string, attemptId: string): AuthorizationAttemptView {
     const attempt = this.attempt(key, attemptId)
     return copyStatus(attempt)
   }
 
+  /** Submit a response to the active authorization prompt.
+   * @param key - credential key of the registered flow.
+   * @param attemptId - active attempt identifier.
+   * @param promptId - active prompt identifier.
+   * @param value - selected or entered response.
+   * @returns the updated attempt state.
+   * @throws {RemoteError} when the attempt or response is invalid.
+   */
   @Remote('respond')
   respond(key: string, attemptId: string, promptId: string, value: string): AuthorizationAttemptView {
     const attempt = this.attempt(key, attemptId)
-    if (attempt.prompt === undefined || attempt.prompt.id !== promptId) throw failure('invalid-prompt', 'that prompt is no longer active')
-    if (attempt.prompt.prompt.kind === 'select' && !attempt.prompt.prompt.options.some(option => option.id === value)) throw failure('invalid-response', 'choose one of the listed options')
+    if (attempt.prompt === undefined || attempt.prompt.id !== promptId) throw failure('authorization/invalid-prompt', 'that prompt is no longer active')
+    if (attempt.prompt.prompt.kind === 'select' && !attempt.prompt.prompt.options.some(option => option.id === value)) throw failure('authorization/invalid-response', 'choose one of the listed options')
     const prompt = attempt.prompt
     prompt.dispose()
     attempt.prompt = undefined
@@ -149,6 +196,12 @@ export class AuthorizationController extends TypertRemoteService {
     return copyStatus(attempt)
   }
 
+  /** Cancel one active authorization attempt.
+   * @param key - credential key of the registered flow.
+   * @param attemptId - active attempt identifier.
+   * @returns the cancelled attempt state.
+   * @throws {RemoteError} when the key or attempt is stale.
+   */
   @Remote('cancel')
   cancel(key: string, attemptId: string): AuthorizationAttemptView {
     const attempt = this.attempt(key, attemptId)
@@ -156,6 +209,11 @@ export class AuthorizationController extends TypertRemoteService {
     return copyStatus(attempt)
   }
 
+  /** Delete the stored credential for a provider flow.
+   * @param key - credential key of the registered flow.
+   * @returns a promise that settles after the record is removed.
+   * @throws {RemoteError} when the key is unavailable or record deletion fails.
+   */
   @Remote('signOut')
   async signOut(key: string): Promise<void> {
     const flow = this.flow(key)
@@ -166,17 +224,17 @@ export class AuthorizationController extends TypertRemoteService {
 
   private flow(value: string): AuthorizationEntry {
     let parsed: CredentialKey
-    try { parsed = parseCredentialKey(value) } catch { throw failure('invalid-key', 'authorization key is invalid') }
+    try { parsed = parseCredentialKey(value) } catch { throw failure('authorization/invalid-key', 'authorization key is invalid') }
     const flow = this.context.authorization.describe(parsed)
-    if (flow === undefined) throw failure('unknown-key', 'that authorization flow is unavailable')
+    if (flow === undefined) throw failure('authorization/unknown-key', 'that authorization flow is unavailable')
     return flow
   }
 
   private attempt(key: string, id: string): Attempt {
     let parsed: CredentialKey
-    try { parsed = parseCredentialKey(key) } catch { throw failure('invalid-key', 'authorization key is invalid') }
+    try { parsed = parseCredentialKey(key) } catch { throw failure('authorization/invalid-key', 'authorization key is invalid') }
     const attempt = this.attempts.get(parsed)
-    if (attempt === undefined || attempt.id !== id) throw failure('stale-attempt', 'that authorization attempt is no longer active')
+    if (attempt === undefined || attempt.id !== id) throw failure('authorization/stale-attempt', 'that authorization attempt is no longer active')
     return attempt
   }
 
@@ -187,7 +245,7 @@ export class AuthorizationController extends TypertRemoteService {
         attempt.notices = [...attempt.notices, copyNotice(notice)].slice(-MAX_NOTICES)
       },
       prompt: prompt => new Promise<string>((resolve, reject) => {
-        if (attempt.prompt !== undefined) { reject(failure('already-prompting', 'another prompt is already active')); return }
+        if (attempt.prompt !== undefined) { reject(failure('authorization/already-prompting', 'another prompt is already active')); return }
         const id = randomBytes(12).toString('base64url')
         const dispose = (): void => prompt.signal?.removeEventListener('abort', onAbort)
         const onAbort = (): void => {

@@ -21,6 +21,7 @@ export interface AuthorizationNoticeView {
   readonly code?: string
 }
 
+/** Terminal and in-progress states of one browser authorization attempt. */
 export type AuthorizationAttemptState = 'running' | 'prompt' | 'authorized' | 'cancelled' | 'failed'
 
 /** One browser-answerable prompt, including its single-use identity. */

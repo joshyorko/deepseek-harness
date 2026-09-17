@@ -118,11 +118,11 @@ export class Dsh {
       .withExec(["pnpm", "run", "build:official"])
       .withExec(["pnpm", "run", "release:pack", "--family", "dsh", "--out", "dist/npm"])
       .withExec(["pnpm", "run", "release:pack", "--family", "vendor", "--out", "dist/npm-vendor"])
-      .withExec(["pnpm", "--dir", "native/landlock-run", "run", "build:ts"])
+      .withExec(["pnpm", "--dir", "native/system", "run", "build:ts"])
       .withExec([
         "pnpm",
         "--dir",
-        "native/landlock-run/packages/entry",
+        "native/system/packages/entry",
         "pack",
         "--pack-destination",
         "/src/dist/npm-landlock",
